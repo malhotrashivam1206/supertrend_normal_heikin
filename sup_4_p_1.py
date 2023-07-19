@@ -1,4 +1,3 @@
-
 import json
 from datetime import datetime, timedelta
 from pytz import timezone
@@ -113,7 +112,7 @@ app = dash.Dash(__name__)
 # Define the layout of the Dash app
 app.layout = html.Div([
     html.H1("Live Candlestick Graph", style={'textAlign': 'center'}),
-    dcc.Graph(id='live-candlestick-graph', config={'displayModeBar': False}),
+    dcc.Graph(id='live-candlestick-graph', config={'displayModeBar': False, 'scrollZoom': False}),
     dcc.Dropdown(
         id='chart-type-dropdown',
         options=[
@@ -147,7 +146,7 @@ app.layout = html.Div([
         value=['slider']
     ),
     dcc.Interval(id='graph-update-interval', interval=200, n_intervals=0)
-], style={'height': '100vh'})
+], style={'height': '100vh', 'width': '100vw'})
 
 
 def calculate_supertrend(data, atr_period=1, factor=3.0):
@@ -260,6 +259,7 @@ def update_graph(n, interval, chart_type):
     # Initialize variables for tracking the trend
     current_trend = None
     trend_start = None
+    trend_lines = []  # List to store trend lines
 
     # Iterate over the supertrend data to identify trend changes and add trend lines
     for i in range(len(supertrend_data)):
@@ -270,39 +270,34 @@ def update_graph(n, interval, chart_type):
             current_trend = current_signal['direction']
             trend_start = current_signal.name
         elif current_trend != current_signal['direction']:
-            # If the trend changes, add a trend line and update the trend variables
+            # If the trend changes, add the completed trend line to the list
             trend_data = resampled_data.loc[trend_start:current_signal.name]
-            if current_trend == 1:
-                fig.add_trace(go.Scatter(x=trend_data.index,
-                                         y=supertrend_data.loc[trend_start:current_signal.name, 'supertrend'],
-                                         mode='lines',
-                                         name='Up Trend',
-                                         line=dict(color='green')))
-            else:
-                fig.add_trace(go.Scatter(x=trend_data.index,
-                                         y=supertrend_data.loc[trend_start:current_signal.name, 'supertrend'],
-                                         mode='lines',
-                                         name='Down Trend',
-                                         line=dict(color='red')))
+            if len(trend_data) > 1:
+                trend_lines.append((current_trend, trend_data[:-1]))
 
             # Update the trend variables
             current_trend = current_signal['direction']
             trend_start = current_signal.name
 
-    # Add the trend line for the last active trend (from the last signal to the end)
-    trend_data = resampled_data.loc[trend_start:]
-    if current_trend == 1:
-        fig.add_trace(go.Scatter(x=trend_data.index,
-                                 y=supertrend_data.loc[trend_start:, 'supertrend'],
-                                 mode='lines',
-                                 name='Up Trend',
-                                 line=dict(color='green')))
-    else:
-        fig.add_trace(go.Scatter(x=trend_data.index,
-                                 y=supertrend_data.loc[trend_start:, 'supertrend'],
-                                 mode='lines',
-                                 name='Down Trend',
-                                 line=dict(color='red')))
+    # Add the last completed trend line to the list
+    last_trend_data = resampled_data.loc[trend_start:]
+    if len(last_trend_data) > 1:
+        trend_lines.append((current_trend, last_trend_data[:-1]))
+
+    # Add trend lines to the figure
+    for trend, trend_data in trend_lines:
+        if trend == 1:
+            fig.add_trace(go.Scatter(x=trend_data.index,
+                                     y=supertrend_data.loc[trend_data.index, 'supertrend'],
+                                     mode='lines',
+                                     name='Up Trend',
+                                     line=dict(color='green')))
+        else:
+            fig.add_trace(go.Scatter(x=trend_data.index,
+                                     y=supertrend_data.loc[trend_data.index, 'supertrend'],
+                                     mode='lines',
+                                     name='Down Trend',
+                                     line=dict(color='red')))
 
     # Add markers for buy and sell signals
     buy_signals = supertrend_data[supertrend_data['direction'].diff() > 0]
@@ -326,6 +321,7 @@ def update_graph(n, interval, chart_type):
     return fig
 
 
+
 def plot_candlestick(data):
     fig = go.Figure(data=[
         go.Candlestick(x=data.index,
@@ -333,17 +329,6 @@ def plot_candlestick(data):
                        high=data['high'],
                        low=data['low'],
                        close=data['close'])
-    ])
-
-    return fig
-
-def plot_heikin_ashi(data):
-    fig = go.Figure(data=[
-        go.Candlestick(x=data.index,
-                       open=data['ha_open'],
-                       high=data['ha_high'],
-                       low=data['ha_low'],
-                       close=data['ha_close'])
     ])
 
     return fig
